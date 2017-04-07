@@ -18,7 +18,28 @@ package storage
 
 import (
 	"encoding/binary"
+	"path/filepath"
 )
+
+type StoreParams struct {
+	DbStorePath        string
+	DbStoreCapacity    uint64
+	MemStoreCapacity   uint
+	RequestBufferSize  uint
+	DeliveryBufferSize uint
+	StorageBufferSize  uint
+}
+
+func NewStoreParams(path string) (self *StoreParams) {
+	return &StoreParams{
+		DbStorePath:        filepath.Join(path, "chunks"),
+		DbStoreCapacity:    dbStoreCapacity,
+		MemStoreCapacity:   memStoreCapacity,
+		RequestBufferSize:  1024,
+		DeliveryBufferSize: 256,
+		StorageBufferSize:  256,
+	}
+}
 
 // LocalStore is a combination of inmemory db over a disk persisted db
 // implements a Get/Put with fallback (caching) logic using any 2 ChunkStores
@@ -29,12 +50,12 @@ type LocalStore struct {
 
 // This constructor uses MemStore and DbStore as components
 func NewLocalStore(hash Hasher, params *StoreParams) (*LocalStore, error) {
-	dbStore, err := NewDbStore(params.ChunkDbPath, hash, params.DbCapacity, params.Radius)
+	dbStore, err := NewDbStore(params.DbStorePath, hash, params.DbStoreCapacity, 0)
 	if err != nil {
 		return nil, err
 	}
 	return &LocalStore{
-		memStore: NewMemStore(dbStore, params.CacheCapacity),
+		memStore: NewMemStore(dbStore, params.MemStoreCapacity),
 		DbStore:  dbStore,
 	}, nil
 }
@@ -43,6 +64,13 @@ func NewLocalStore(hash Hasher, params *StoreParams) (*LocalStore, error) {
 // unsafe, in that the data is not integrity checked
 func (self *LocalStore) Put(chunk *Chunk) {
 	chunk.dbStored = make(chan bool)
+	// if key is not specified, calculate it
+	// impossible to sed invalid chunk
+	if len(chunk.Key) == 0 {
+		h := self.DbStore.hashfunc()
+		hash := h.Sum(chunk.SData)
+		chunk.Key = Key(hash)
+	}
 	self.memStore.Put(chunk)
 	if chunk.wg != nil {
 		chunk.wg.Add(1)

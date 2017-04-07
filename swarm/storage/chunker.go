@@ -314,13 +314,13 @@ func (self *LazyChunkReader) Size(quitC chan bool) (n int64, err error) {
 	if self.chunk != nil {
 		return self.chunk.Size, nil
 	}
-	chunk := retrieve(self.key, self.chunkC, quitC)
-	if chunk == nil {
+	chunk, err := retrieve(self.key, self.chunkC, quitC)
+	if err != nil {
 		select {
 		case <-quitC:
 			return 0, errors.New("aborted")
 		default:
-			return 0, fmt.Errorf("root chunk not found for %v", self.key.Hex())
+			return 0, fmt.Errorf("root chunk not found for %v: %v", self.key.Hex(), err)
 		}
 	}
 	self.chunk = chunk
@@ -417,10 +417,10 @@ func (self *LazyChunkReader) join(b []byte, off int64, eoff int64, depth int, tr
 		wg.Add(1)
 		go func(j int64) {
 			childKey := chunk.SData[8+j*self.hashSize : 8+(j+1)*self.hashSize]
-			chunk := retrieve(childKey, self.chunkC, quitC)
-			if chunk == nil {
+			chunk, err := retrieve(childKey, self.chunkC, quitC)
+			if err != nil {
 				select {
-				case errC <- fmt.Errorf("chunk %v-%v not found", off, off+treeSize):
+				case errC <- fmt.Errorf("chunk %v-%v not found: %v", off, off+treeSize, err):
 				case <-quitC:
 				}
 				return
@@ -436,30 +436,33 @@ func (self *LazyChunkReader) join(b []byte, off int64, eoff int64, depth int, tr
 // the helper method submits chunks for a key to a oueue (DPA) and
 // block until they time out or arrive
 // abort if quitC is readable
-func retrieve(key Key, chunkC chan *Chunk, quitC chan bool) *Chunk {
+func retrieve(key Key, chunkC chan *Chunk, quitC chan bool) (*Chunk, error) {
 	chunk := &Chunk{
-		Key: key,
-		C:   make(chan bool), // close channel to signal data delivery
+		Key:  key,
+		ErrC: make(chan error), // close channel to signal data delivery
 	}
 	// submit chunk for retrieval
 	select {
 	case chunkC <- chunk: // submit retrieval request, someone should be listening on the other side (or we will time out globally)
 	case <-quitC:
-		return nil
+		return nil, nil
 	}
 	// waiting for the chunk retrieval
 	select { // chunk.Size = int64(binary.LittleEndian.Uint64(chunk.SData[0:8]))
 
 	case <-quitC:
 		// this is how we control process leakage (quitC is closed once join is finished (after timeout))
-		return nil
-	case <-chunk.C: // bells are ringing, data have been delivered
+		return nil, nil
+	case err := <-chunk.ErrC: // bells are ringing, data have been delivered
+		if err != nil {
+			return nil, err
+		}
 	}
 	if len(chunk.SData) == 0 {
-		return nil // chunk.Size = int64(binary.LittleEndian.Uint64(chunk.SData[0:8]))
+		return nil, fmt.Errorf("no data for chunk")
 
 	}
-	return chunk
+	return chunk, nil
 }
 
 // Read keeps a cursor so cannot be called simulateously, see ReadAt

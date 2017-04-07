@@ -127,7 +127,7 @@ type RequestStatus struct {
 	Requesters map[uint64][]interface{}
 }
 
-func newRequestStatus(key Key) *RequestStatus {
+func NewRequestStatus(key Key) *RequestStatus {
 	return &RequestStatus{
 		Key:        key,
 		Requesters: make(map[uint64][]interface{}),
@@ -146,6 +146,7 @@ type Chunk struct {
 	Size     int64           // size of the data covered by the subtree encoded in this chunk
 	Source   Peer            // peer
 	C        chan bool       // to signal data delivery by the dpa
+	ErrC     chan error      // to signal data delivery or network submission by the dpa
 	Req      *RequestStatus  // request Status needed by netStore
 	wg       *sync.WaitGroup // wg to synchronize
 	dbStored chan bool       // never remove a chunk from memStore before it is written to dbStore
@@ -153,6 +154,14 @@ type Chunk struct {
 
 func NewChunk(key Key, rs *RequestStatus) *Chunk {
 	return &Chunk{Key: key, Req: rs}
+}
+
+func NewChunkFromData(data []byte) (*Chunk, error) {
+	if len(data) < 9 {
+		return nil, fmt.Errorf("invalid chunk too short %x", data)
+	}
+	size := int64(binary.LittleEndian.Uint64(data[0:8]))
+	return &Chunk{SData: data, Size: size}, nil
 }
 
 /*

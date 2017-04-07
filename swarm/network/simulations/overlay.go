@@ -116,8 +116,8 @@ func nethook(conf *simulations.NetworkConfig) (simulations.NetworkControl, *simu
 	conf.Backend = true
 	net := NewNetwork(simulations.NewNetwork(conf))
 
-	//ids := p2ptest.RandomNodeIds(10)
-	ids := adapters.RandomNodeIds(3)
+	// ids := adapters.RandomNodeIds(3)
+	ids := adapters.RandomNodeIds(10)
 
 	for i, id := range ids {
 		net.NewNode(&simulations.NodeConfig{Id: id})

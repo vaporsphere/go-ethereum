@@ -48,7 +48,8 @@ const (
 )
 
 var (
-	notFound = errors.New("not found")
+	searchTimeout = 3000 * time.Millisecond
+	notFound      = errors.New("not found")
 )
 
 type DPA struct {
@@ -201,7 +202,6 @@ func NewDpaChunkStore(localStore, netStore ChunkStore) *dpaChunkStore {
 // waits for response or times out
 func (self *dpaChunkStore) Get(key Key) (chunk *Chunk, err error) {
 	chunk, err = self.netStore.Get(key)
-	// timeout := time.Now().Add(searchTimeout)
 	if chunk.SData != nil {
 		glog.V(logger.Detail).Infof("DPA.Get: %v found locally, %d bytes", key.Log(), len(chunk.SData))
 		return

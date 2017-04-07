@@ -36,8 +36,7 @@ import (
 )
 
 const (
-	defaultDbCapacity = 5000000
-	defaultRadius     = 0 // not yet used
+	dbStoreCapacity = 5000000
 
 	gcArraySize      = 10000
 	gcArrayFreeRatio = 0.1
