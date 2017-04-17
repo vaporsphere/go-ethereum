@@ -54,9 +54,10 @@ var (
 
 type DPA struct {
 	ChunkStore
+	Chunker Chunker
+
 	storeC    chan *Chunk
 	retrieveC chan *Chunk
-	Chunker   Chunker
 
 	lock    sync.Mutex
 	running bool
@@ -65,26 +66,20 @@ type DPA struct {
 }
 
 // for testing locally
-func NewLocalDPA(datadir string) (*DPA, error) {
+func NewLocalDPA(path string) *DPA {
+	sp := NewStoreParams(path)
+	sp.Hash = "SHA256"
+	sp.MemStoreCapacity = singletonSwarmCacheCapacity
+	sp.DbStoreCapacity = singletonSwarmDbCapacity
+	ls, err := NewLocalStore(sp)
 
-	hash := MakeHashFunc("SHA256")
-
-	dbStore, err := NewDbStore(datadir, hash, singletonSwarmDbCapacity, 0)
-	if err != nil {
-		return nil, err
-	}
-
-	return NewDPA(&LocalStore{
-		NewMemStore(dbStore, singletonSwarmCacheCapacity),
-		dbStore,
-	}, NewChunkerParams()), nil
+	return NewDPA(ls, NewTreeChunker(NewChunkerParams()))
 }
 
-func NewDPA(store ChunkStore, params *ChunkerParams) *DPA {
-	chunker := NewTreeChunker(params)
+func NewDPA(cs ChunkStore, chunker Chunker) *DPA {
 	return &DPA{
 		Chunker:    chunker,
-		ChunkStore: store,
+		ChunkStore: cs,
 	}
 }
 
@@ -123,6 +118,7 @@ func (self *DPA) Stop() {
 		return
 	}
 	self.running = false
+	self.ChunkStore.Close()
 	close(self.quitC)
 }
 

@@ -29,7 +29,7 @@ func initDbStore(t *testing.T) *DbStore {
 	if err != nil {
 		t.Fatal(err)
 	}
-	m, err := NewDbStore(dir, MakeHashFunc(defaultHash), defaultDbCapacity, defaultRadius)
+	m, err := NewDbStore(dir, MakeHashFunc(defaultHash), defaultDbCapacity, 0)
 	if err != nil {
 		t.Fatal("can't create store:", err)
 	}

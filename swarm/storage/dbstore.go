@@ -36,7 +36,7 @@ import (
 )
 
 const (
-	dbStoreCapacity = 5000000
+	defaultDbCapacity = 5000000
 
 	gcArraySize      = 10000
 	gcArrayFreeRatio = 0.1
@@ -68,15 +68,15 @@ type DbStore struct {
 	gcPos, gcStartPos []byte
 	gcArray           []*gcItem
 
-	hashfunc Hasher
+	*Hasher
 
 	lock sync.Mutex
 }
 
-func NewDbStore(path string, hash Hasher, capacity uint64, radius int) (s *DbStore, err error) {
+func NewDbStore(path string, hasher *Hasher, capacity uint64, radius int) (s *DbStore, err error) {
 	s = new(DbStore)
 
-	s.hashfunc = hash
+	s.Hasher = hasher
 
 	s.db, err = NewLDBDatabase(path)
 	if err != nil {
@@ -350,9 +350,7 @@ func (s *DbStore) Get(key Key) (chunk *Chunk, err error) {
 			return
 		}
 
-		hasher := s.hashfunc()
-		hasher.Write(data)
-		hash := hasher.Sum(nil)
+		hash := s.Hash(data)
 		if !bytes.Equal(hash, key) {
 			s.db.Delete(getDataKey(index.Idx))
 			err = fmt.Errorf("invalid chunk. hash=%x, key=%v", hash, key[:])

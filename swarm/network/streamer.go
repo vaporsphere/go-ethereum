@@ -16,53 +16,106 @@
 
 package network
 
+import (
+	"fmt"
+	"sync"
+
+	"github.com/ethereum/go-ethereum/common"
+)
+
+const (
+	Low int = iota
+	Mid
+	High
+	Top
+	PriorityQueues    // number of queues
+	PriorityQueueSize = 3
+)
+
+// stream is a represented by hash (it will always be the result of hashing a url)
+// this way it is not very easily discoverable
+// not using []byte but Hash lvalue here allows Stream to be used as keys in a map
+type Stream common.Hash
+
+// represents a section of a stream starting at Offset having length Length
+// zero Length indicates a section (request) till the latest (in)
+type StreamSection struct {
+	Stream String // name of stream
+	Offset uint64
+	Length uint64
+}
+
+func (s StreamSection) String() string {
+	return fmt.Sprintf("stream '%v' at offset %v lenth %v", self.Stream, self.Offset, self.Length)
+}
+
+// represents a statement that the originator owns the stream section
+type Receipt struct {
+	*StreamSection
+}
+
+// represents a signed statement that the originator owns the stream section
+type SignedReceipt struct {
+	Sig []byte
+	*Receipt
+}
+
+// Delivery request for a stream(section)
+type SubscribeMsgData struct {
+	*StreamSection
+	Live      bool  // whether the stream should continue after the latest
+	Priority  uint8 // delivered on priority channel
+	Rate      uint8 // step in the stream (in case it is multirate)
+	BatchSize uint8 // size of batches to be sent
+}
+
+// sent to inquire about a stream
+type StreamRequestMsgData struct {
+	*StreamSection
+}
+
+func (self StreamRequestMsgData) String() string {
+	return fmt.Sprintf("Query for %v", self.StreamSection)
+}
+
+// sent as a response from a provider
+type StreamResponseMsgData struct {
+	Stream string
+	Peers  []*peerAddr
+}
+
+func (self StreamResponseMsgData) String() string {
+	return fmt.Sprintf("Stream '%v' served by %v", self.Stream, self.Peers)
+}
+
+// for streams that use a check roundtrip
+type UnsyncedKeysMsgData struct {
+	*StreamSection
+	Batch  uint64 // id of the batch
+	Hashes []byte // stream of hashes (128)
+	Root   []byte // integrity check and request for receipt at Offset
+}
+
+func (self UnsyncedKeysMsgData) String() string {
+	return fmt.Sprintf("Stream '%v' Batch %v", self.Stream, self.Batch)
+}
+
+type WantedKeysMsgData struct {
+	Batch uint64 // id of the batch
+	Want  []byte // bitvector indicating which keys of the batch needed
+	*SignedReceipt
+}
+
+func (self WantedKeysMsgData) String() string {
+	return fmt.Sprintf("Stream '%v' Batch %v", self.Stream, self.Batch)
+}
+
 // stream manager
 type Streamer struct {
 	inlock   sync.Mutex
 	outlock  sync.Mutex
 	outgoing map[string]OutgoingStreamer
 	incoming map[string]IncomingStreamer
-}
-
-type SubscribeMsgData struct {
-	Stream   string //name of stream
-	Offset   uint64 // offset to stream from
-	Live     bool
-	Priority uint8 // delivered on priority channel
-	Rate     uint8 // step in the stream (in case it is multirate)
-	MaxLen   uint8 // size of batch to be sent
-}
-
-// sent to inquire about a stream
-type StreamRequestMsgData struct {
-	Stream string
-	Offset uint64
-}
-
-// sent as a response from a provider
-type StreamResponseMsgData struct {
-	Stream string
-	Offset uint64
-	Peers  []*peerAddr
-}
-
-func (self StreamRequestMsgData) String() string {
-	return fmt.Sprintf("Query for stream '%v' from offset %v till %v", self.Stream, self.MinOffset, self.MaxOffset)
-}
-
-type UnsyncedKeysMsgData struct {
-	Stream string // name of stream
-	Batch  uint64 // id of the batch
-	Hashes []byte // stream of hashes (128)
-	Root   []byte // integrity check and request for receipt at Offset
-	Offset uint64 // the offset after the last hash in Hashes
-}
-
-type WantedKeysMsgData struct {
-	Stream  string // name of stream
-	Batch   uint64 // id of the batch
-	Want    []byte // bitvector indicating which keys of the batch needed
-	Receipt []byte
 }
 
 type OutgoingStreamer interface {
@@ -103,42 +156,14 @@ type StreamerPeer struct {
 	quit     chan bool
 }
 
-func NewStreamerPeer() *StreamerPeer {
-	var queues = make([Top + 1]chan interface{})
-	for i, _ := range queues {
-		queues[i] = make(chan interface{})
-	}
+func NewStreamerPeer(p Peer) *StreamerPeer {
 	self := &StreamerPeer{
-		queues:   queues,
+		queues:   NewPriorityQueues(PriorityQueues, PriorityQueueSize).Run(p.Send),
 		Peer:     p,
 		outgoing: make(map[string]OutgoingPeerStreamer),
 		incoming: make(map[string]IncomingPeerStreamer),
 		quit:     make(chan bool),
 	}
-
-	go func() {
-		var priority int = Top
-		var q chan interface{}
-		for {
-			q = self.queues[priority]
-			select {
-			case <-self.quit:
-				return
-			case msg <- q:
-				p.Send(msg)
-				priority = Top
-			default:
-				priority--
-				if priority < 0 {
-					priority = Top
-				}
-				select {
-					<-
-				}
-			}
-		}
-	}()
-
 	return self
 }
 

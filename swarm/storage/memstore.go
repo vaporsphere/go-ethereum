@@ -26,7 +26,7 @@ const (
 	memTreeLW              = 2  // log2(subtree count) of the subtrees
 	memTreeFLW             = 14 // log2(subtree count) of the root layer
 	dbForceUpdateAccessCnt = 1000
-	memStoreCapacity       = 5000
+	defaultCacheCapacity   = 5000
 )
 
 type MemStore struct {

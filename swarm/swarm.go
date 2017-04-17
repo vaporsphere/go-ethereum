@@ -90,43 +90,29 @@ func NewSwarm(ctx *node.ServiceContext, backend chequebook.Backend, config *api.
 	}
 	glog.V(logger.Debug).Infof("Setting up Swarm service components")
 
-	hash := storage.MakeHashFunc(config.ChunkerParams.Hash)
-	self.lstore, err = storage.NewLocalStore(hash, config.StoreParams)
-	if err != nil {
-		return
-	}
-
-	// setup local store
-	glog.V(logger.Debug).Infof("Set up local storage")
-
-	self.dbAccess = network.NewDbAccess(self.lstore)
-	glog.V(logger.Debug).Infof("Set up local db access (iterator/counter)")
-
-	// set up the kademlia hive
-	self.hive = network.NewHive(
-		common.HexToHash(self.config.BzzKey), // key to hive (kademlia base address)
-		config.HiveParams,                    // configuration parameters
-		swapEnabled,                          // SWAP enabled
-		syncEnabled,                          // syncronisation enabled
-	)
+	to := network.NewKademlia(common.HexToHash(self.config.BzzKey), config.KadParams) // overlay topology driver
+	hp := network.NewHiveParams()
+	self.hive = network.NewHive(hp, to) // hive
 	glog.V(logger.Debug).Infof("Set up swarm network with Kademlia hive")
 
-	// setup cloud storage backend
-	cloud := network.NewForwarder(self.hive)
-	glog.V(logger.Debug).Infof("-> set swarm forwarder as cloud storage backend")
-	// setup cloud storage internal access layer
-
-	self.storage = storage.NewNetStore(hash, self.lstore, cloud, config.StoreParams)
-	glog.V(logger.Debug).Infof("-> swarm net store shared access layer to Swarm Chunk Store")
-
-	// set up Depo (storage handler = cloud storage access layer for incoming remote requests)
-	self.depo = network.NewDepo(hash, self.lstore, self.storage)
-	glog.V(logger.Debug).Infof("-> REmote Access to CHunks")
-
 	// set up DPA, the cloud storage local access layer
-	dpaChunkStore := storage.NewDpaChunkStore(self.lstore, self.storage)
 	glog.V(logger.Debug).Infof("-> Local Access to Swarm")
 	// Swarm Hash Merklised Chunking for Arbitrary-length Document/File storage
+
+	localStore, err := NewLocalStore(config.StoreParams)
+	if err != nil {
+		return nil, err
+	}
+
+	netStore, err := NewNetStore(localStore, config.NetStoreParams)
+	if err != nil {
+		return nil, err
+	}
+	dpaChunkStore := NewDpaChunkStore(localStore, netStore)
+	if err != nil {
+		return nil, err
+	}
+
 	self.dpa = storage.NewDPA(dpaChunkStore, self.config.ChunkerParams)
 	glog.V(logger.Debug).Infof("-> Content Store API")
 
@@ -166,24 +152,9 @@ func (self *Swarm) Start(net *p2p.Server) error {
 		net.AddPeer(node)
 		return nil
 	}
-	// set chequebook
-	if self.swapEnabled {
-		ctx := context.Background() // The initial setup has no deadline.
-		err := self.SetChequebook(ctx)
-		if err != nil {
-			return fmt.Errorf("Unable to set chequebook for SWAP: %v", err)
-		}
-		glog.V(logger.Debug).Infof("-> cheque book for SWAP: %v", self.config.Swap.Chequebook())
-	} else {
-		glog.V(logger.Debug).Infof("SWAP disabled: no cheque book set")
-	}
 
 	glog.V(logger.Warn).Infof("Starting Swarm service")
-	self.hive.Start(
-		discover.PubkeyID(&net.PrivateKey.PublicKey),
-		func() string { return net.ListenAddr },
-		connectPeer,
-	)
+	self.hive.Start(connectPeer, nil)
 	glog.V(logger.Info).Infof("Swarm network started on bzz address: %v", self.hive.Addr())
 
 	self.dpa.Start()
@@ -193,12 +164,11 @@ func (self *Swarm) Start(net *p2p.Server) error {
 	if self.config.Port != "" {
 		addr := ":" + self.config.Port
 		go httpapi.StartHttpServer(self.api, &httpapi.Server{Addr: addr, CorsString: self.corsString})
-	}
-
-	glog.V(logger.Debug).Infof("Swarm http proxy started on port: %v", self.config.Port)
-
-	if self.corsString != "" {
-		glog.V(logger.Debug).Infof("Swarm http proxy started with corsdomain:", self.corsString)
+		var corsinfo string
+		if self.corsString != "" {
+			corsinfo = " with corsdomain: %v", self.corsString)
+		}
+		glog.V(logger.Debug).Infof("Swarm http proxy started on port: %v%v", self.config.Port, corsinfo)
 	}
 
 	return nil
@@ -212,10 +182,6 @@ func (self *Swarm) Stop() error {
 	if ch := self.config.Swap.Chequebook(); ch != nil {
 		ch.Stop()
 		ch.Save()
-	}
-
-	if self.lstore != nil {
-		self.lstore.DbStore.Close()
 	}
 
 	return self.config.Save()

@@ -19,6 +19,7 @@ package storage
 import (
 	"bytes"
 	"crypto"
+	"encoding/binary"
 	"fmt"
 	"hash"
 	"io"
@@ -27,8 +28,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto/sha3"
 )
-
-type Hasher func() hash.Hash
 
 // Peer is the recorded as Source on the chunk
 // should probably not be here? but network should wrap chunk object
@@ -76,16 +75,6 @@ func IsZeroKey(key Key) bool {
 }
 
 var ZeroKey = Key(common.Hash{}.Bytes())
-
-func MakeHashFunc(hash string) Hasher {
-	switch hash {
-	case "SHA256":
-		return crypto.SHA256.New
-	case "SHA3":
-		return sha3.NewKeccak256
-	}
-	return nil
-}
 
 func (key Key) Hex() string {
 	return fmt.Sprintf("%064x", []byte(key[:]))
@@ -239,4 +228,33 @@ type LazyTestSectionReader struct {
 
 func (self *LazyTestSectionReader) Size(chan bool) (int64, error) {
 	return self.SectionReader.Size(), nil
+}
+
+// can be included in objects to do hashing
+type Hasher struct {
+	hasher func() hash.Hash
+}
+
+func NewHasher(hash string) *Hasher {
+	var hasher func() hash.Hash
+	switch hash {
+	case "SHA256":
+		hasher = crypto.SHA256.New
+	case "SHA3":
+		hasher = sha3.NewKeccak256
+	}
+	size := hasher().Size()
+	return &Hasher{hasher, size}
+}
+
+func (self *Hasher) Size() int {
+	return self.size
+}
+
+// hash function never reusing the same hasher to allow concurrent hashing
+func (self *Hasher) Hash(data []byte) Key {
+	h := self.hasher()
+	defer h.Reset()
+	h.Write(data)
+	return Key(h.Sum(nil))
 }

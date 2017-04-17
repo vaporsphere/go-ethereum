@@ -23,6 +23,22 @@ import (
 	"github.com/ethereum/go-ethereum/logger/glog"
 )
 
+type NetStoreParams struct {
+	RequestBufferSize  uint
+	DeliveryBufferSize uint
+	StorageBufferSize  uint
+	Hash               string
+}
+
+func NewNetStoreParams() *NetStoreParams {
+	return &NetStoreParams{
+		RequestBufferSize:  1024,
+		DeliveryBufferSize: 256,
+		StorageBufferSize:  256,
+		Hash:               "SHA3",
+	}
+}
+
 /*
 NetStore is a cloud storage access abstaction layer for swarm
 it contains the shared logic of network served chunk store/retrieval requests
@@ -35,7 +51,7 @@ NetStore falls back to a backend (CloudStorage interface)
 implemented by bzz/network/forwarder. forwarder or IPFS or IPΞS
 */
 type NetStore struct {
-	localStore *LocalStore
+	localStore ChunkStore
 	RetrieveC  chan *Chunk
 	DeliverC   chan *Chunk
 	StoreC     chan *Chunk
@@ -43,7 +59,7 @@ type NetStore struct {
 
 // netstore contructor, takes path argument that is used to initialise dbStore,
 // the persistent (disk) storage component of LocalStore
-func NewNetStore(lstore *LocalStore, params *StoreParams) *NetStore {
+func NewNetStore(lstore *LocalStore, params *NetStoreParams) *NetStore {
 	return &NetStore{
 		localStore: lstore,
 		RetrieveC:  make(chan *Chunk, params.RequestBufferSize),
@@ -94,7 +110,7 @@ func (self *NetStore) Get(key Key) (*Chunk, error) {
 	// no data and no request status
 	glog.V(logger.Detail).Infof("NetStore.Get: %v not found locally. open new request", key)
 	chunk = NewChunk(key, NewRequestStatus(key))
-	self.localStore.memStore.Put(chunk)
+	self.localStore.Put(chunk)
 	err = pushChunk(self.RetrieveC, chunk)
 	return chunk, fmt.Errorf("netstore retrieval error: %v", err)
 }

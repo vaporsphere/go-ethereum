@@ -1,4 +1,3 @@
-// Copyright 2016 The go-ethereum Authors
 // This file is part of the go-ethereum library.
 //
 // The go-ethereum library is free software: you can redistribute it and/or modify
@@ -22,40 +21,40 @@ import (
 )
 
 type StoreParams struct {
-	DbStorePath        string
-	DbStoreCapacity    uint64
-	MemStoreCapacity   uint
-	RequestBufferSize  uint
-	DeliveryBufferSize uint
-	StorageBufferSize  uint
+	DbStorePath      string
+	DbStoreCapacity  uint64
+	MemStoreCapacity uint
+	Hash             string
 }
 
 func NewStoreParams(path string) (self *StoreParams) {
 	return &StoreParams{
-		DbStorePath:        filepath.Join(path, "chunks"),
-		DbStoreCapacity:    dbStoreCapacity,
-		MemStoreCapacity:   memStoreCapacity,
-		RequestBufferSize:  1024,
-		DeliveryBufferSize: 256,
-		StorageBufferSize:  256,
+		DbStorePath:      filepath.Join(path, "chunks"),
+		DbStoreCapacity:  defaultDbCapacity,
+		MemStoreCapacity: defaultCacheCapacity,
+		Hash:             "SHA3",
 	}
 }
 
 // LocalStore is a combination of inmemory db over a disk persisted db
 // implements a Get/Put with fallback (caching) logic using any 2 ChunkStores
 type LocalStore struct {
-	memStore ChunkStore
-	DbStore  ChunkStore
+	*Hasher
+	memStore *MemStore
+	DbStore  *DbStore
 }
 
 // This constructor uses MemStore and DbStore as components
-func NewLocalStore(hash Hasher, params *StoreParams) (*LocalStore, error) {
-	dbStore, err := NewDbStore(params.DbStorePath, hash, params.DbStoreCapacity, 0)
+func NewLocalStore(params *StoreParams) (*LocalStore, error) {
+	hasher := NewHasher(params.Hash)
+	dbStore, err := NewDbStore(params.DbStorePath, hasher, params.DbStoreCapacity, 0)
 	if err != nil {
 		return nil, err
 	}
+	memStore := NewMemStore(dbStore, params.MemStoreCapacity)
 	return &LocalStore{
-		memStore: NewMemStore(dbStore, params.MemStoreCapacity),
+		Hasher:   hasher,
+		memStore: memStore,
 		DbStore:  dbStore,
 	}, nil
 }
@@ -65,22 +64,23 @@ func NewLocalStore(hash Hasher, params *StoreParams) (*LocalStore, error) {
 func (self *LocalStore) Put(chunk *Chunk) {
 	chunk.dbStored = make(chan bool)
 	// if key is not specified, calculate it
-	// impossible to sed invalid chunk
+	// impossible to send invalid chunk
 	if len(chunk.Key) == 0 {
-		h := self.DbStore.hashfunc()
-		hash := h.Sum(chunk.SData)
-		chunk.Key = Key(hash)
+		chunk.Key = self.Hash(chunk.SData)
 	}
 	self.memStore.Put(chunk)
 	if chunk.wg != nil {
 		chunk.wg.Add(1)
 	}
-	go func() {
-		self.DbStore.Put(chunk)
-		if chunk.wg != nil {
-			chunk.wg.Done()
-		}
-	}()
+	// if the chunk is an open request, do not save it to db
+	if chunk.SData != nil {
+		go func() {
+			self.DbStore.Put(chunk)
+			if chunk.wg != nil {
+				chunk.wg.Done()
+			}
+		}()
+	}
 }
 
 // Get(chunk *Chunk) looks up a chunk in the local stores
