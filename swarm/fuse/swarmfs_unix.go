@@ -140,7 +140,7 @@ func (self *SwarmFS) Mount(mhash, mountpoint string) (*MountInfo, error) {
 
 			}
 		}
-		thisFile := NewSwarmFile(basepath, filepath.Base(fullpath), mi)
+		thisFile := NewSwarmFile(basepath, filepath.Base(fullpath), entry.Mode, entry.ModTime, entry.Size, mi)
 		thisFile.key = key
 
 		parentDir.files = append(parentDir.files, thisFile)

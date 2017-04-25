@@ -165,11 +165,42 @@ func testStoreCorrect(m ChunkStore, processors int, n int, chunksize int, t *tes
 		if !bytes.Equal(h, chunk.Key) {
 			return fmt.Errorf("key does not match retrieved chunk Key")
 		}
+<<<<<<< f7b505e6da5cddb8011ecac6bb43307713fe6ee5
 		hasher := sha3.NewKeccak256()
 		hasher.Write(chunk.SData)
 		exp := hasher.Sum(nil)
 		if !bytes.Equal(h, exp) {
 			return fmt.Errorf("key is not hash of chunk data")
+=======
+	}()
+	chunker := NewTreeChunker(&ChunkerParams{
+		Branches: branches,
+		Hash:     SHA3Hash,
+	})
+	swg := &sync.WaitGroup{}
+	key, _ := chunker.Split(rand.Reader, l, chunkC, swg, nil)
+	swg.Wait()
+	close(chunkC)
+	chunkC = make(chan *Chunk)
+
+	quit := make(chan bool)
+
+	go func() {
+		for ch := range chunkC {
+			go func(chunk *Chunk) {
+				storedChunk, err := m.Get(chunk.Key)
+				if err == notFound {
+					log.Trace(fmt.Sprintf("chunk '%v' not found", chunk.Key.Log()))
+				} else if err != nil {
+					log.Trace(fmt.Sprintf("error retrieving chunk %v: %v", chunk.Key.Log(), err))
+				} else {
+					chunk.SData = storedChunk.SData
+					chunk.Size = storedChunk.Size
+				}
+				log.Trace(fmt.Sprintf("chunk '%v' not found", chunk.Key.Log()))
+				close(chunk.C)
+			}(ch)
+>>>>>>> swarm/storage: Pyramid chunker re-write
 		}
 		return nil
 	}

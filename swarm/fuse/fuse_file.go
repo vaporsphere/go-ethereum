@@ -28,6 +28,7 @@ import (
 	"io"
 	"os"
 	"sync"
+	"time"
 )
 
 const (
@@ -49,6 +50,8 @@ type SwarmFile struct {
 	inode    uint64
 	name     string
 	path     string
+	fmode    os.FileMode
+	modTime  time.Time
 	key      storage.Key
 	fileSize int64
 	reader   storage.LazySectionReader
@@ -57,15 +60,27 @@ type SwarmFile struct {
 	lock      *sync.RWMutex
 }
 
-func NewSwarmFile(path, fname string, minfo *MountInfo) *SwarmFile {
-	newFile := &SwarmFile{
-		inode:    NewInode(),
-		name:     fname,
-		path:     path,
-		key:      nil,
-		fileSize: -1, // -1 means , file already exists in swarm and you need to just get the size from swarm
-		reader:   nil,
+func NewSwarmFile(path, fname string, mode int64, modificationTime time.Time, fileSize int64, minfo *MountInfo) *SwarmFile {
+	// Some old uploads dont have the mode and size field.. Then set it to some default
+	fMode := os.FileMode(0700)
+	if mode != 0 {
+		fMode = os.FileMode(mode)
+	}
 
+	fSize := fileSize
+	if fSize <= 0 {
+		fSize = -1
+	}
+
+	newFile := &SwarmFile{
+		inode:     NewInode(),
+		name:      fname,
+		path:      path,
+		fmode:     fMode,
+		modTime:   modificationTime,
+		key:       nil,
+		fileSize:  -1, // -1 means , file already exists in swarm and you need to just get the size from swarm
+		reader:    nil,
 		mountInfo: minfo,
 		lock:      &sync.RWMutex{},
 	}
@@ -75,10 +90,27 @@ func NewSwarmFile(path, fname string, minfo *MountInfo) *SwarmFile {
 func (file *SwarmFile) Attr(ctx context.Context, a *fuse.Attr) error {
 
 	a.Inode = file.inode
-	//TODO: need to get permission as argument
-	a.Mode = 0700
+	a.Mode = file.fmode
+	a.Mtime = file.modTime
 	a.Uid = uint32(os.Getuid())
 	a.Gid = uint32(os.Getegid())
+
+	if file.fileSize == -1 {
+		reader := file.mountInfo.swarmApi.Retrieve(file.key)
+		quitC := make(chan bool)
+		size, err := reader.Size(quitC)
+		if err != nil {
+			log.Warn("Couldnt get size of file %s : %v", file.path, err)
+			size = 0
+		}
+		file.fileSize = int64(size)
+
+	}
+	a.Size = uint64(file.fileSize)
+	return nil
+}
+
+func (file *SwarmFile) GetFileSize() uint64 {
 
 	if file.fileSize == -1 {
 		reader := file.mountInfo.swarmApi.Retrieve(file.key)
@@ -89,8 +121,7 @@ func (file *SwarmFile) Attr(ctx context.Context, a *fuse.Attr) error {
 		}
 		file.fileSize = int64(size)
 	}
-	a.Size = uint64(file.fileSize)
-	return nil
+	return uint64(file.fileSize)
 }
 
 func (sf *SwarmFile) Read(ctx context.Context, req *fuse.ReadRequest, resp *fuse.ReadResponse) error {

@@ -25,6 +25,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 )
 
 var (
@@ -65,7 +66,29 @@ func (sd *SwarmDir) Attr(ctx context.Context, a *fuse.Attr) error {
 	a.Mode = os.ModeDir | 0700
 	a.Uid = uint32(os.Getuid())
 	a.Gid = uint32(os.Getegid())
+	for _, f := range sd.files {
+		a.Size += f.GetFileSize()
+	}
+	for _, d := range sd.directories {
+		if d.name != "." || d.name != ".." {
+			a.Size += d.GetDirSize()
+		}
+	}
 	return nil
+}
+
+func (sd *SwarmDir) GetDirSize() uint64 {
+
+	var dirSize uint64
+	for _, f := range sd.files {
+		dirSize += f.GetFileSize()
+	}
+	for _, d := range sd.directories {
+		if d.name != "." || d.name != ".." {
+			dirSize += d.GetDirSize()
+		}
+	}
+	return dirSize
 }
 
 func (sd *SwarmDir) Lookup(ctx context.Context, req *fuse.LookupRequest, resp *fuse.LookupResponse) (fs.Node, error) {
@@ -96,9 +119,7 @@ func (sd *SwarmDir) ReadDirAll(ctx context.Context) ([]fuse.Dirent, error) {
 
 func (sd *SwarmDir) Create(ctx context.Context, req *fuse.CreateRequest, resp *fuse.CreateResponse) (fs.Node, fs.Handle, error) {
 
-	newFile := NewSwarmFile(sd.path, req.Name, sd.mountInfo)
-	newFile.fileSize = 0 // 0 means, file is not in swarm yet and it is just created
-
+	newFile := NewSwarmFile(sd.path, req.Name, 0700, time.Now(), 0, sd.mountInfo)
 	sd.lock.Lock()
 	defer sd.lock.Unlock()
 	sd.files = append(sd.files, newFile)
