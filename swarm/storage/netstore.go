@@ -81,12 +81,12 @@ func NewNetStore(hash Hasher, lstore *LocalStore, cloud CloudStore, params *Stor
 
 const (
 	// maximum number of peers that a retrieved message is delivered to
-	requesterCount = 3
+	requesterCount = 30
 )
 
 var (
 	// timeout interval before retrieval is timed out
-	searchTimeout = 3 * time.Second
+	searchTimeout = 30 * time.Second
 )
 
 // store logic common to local and network chunk store requests

@@ -50,7 +50,7 @@ func generateId() uint64 {
 	return uint64(r.Int63())
 }
 
-var searchTimeout = 3 * time.Second
+var searchTimeout = 30 * time.Second
 
 // forwarding logic
 // logic propagating retrieve requests to peers given by the kademlia hive
