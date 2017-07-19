@@ -65,6 +65,7 @@ var (
 const (
 	ChunkProcessors       = 8
 	DefaultBranches int64 = 128
+	DefaultHash           = SHA3Hash
 	splitTimeout          = time.Minute * 5
 
 	DataChunk = iota
@@ -79,7 +80,7 @@ type ChunkerParams struct {
 func NewChunkerParams() *ChunkerParams {
 	return &ChunkerParams{
 		Branches: DefaultBranches,
-		Hash:     SHA3Hash,
+		Hash:     DefaultHash,
 	}
 }
 

@@ -37,7 +37,7 @@ func newTestDbStore() (*testDbStore, error) {
 		return nil, err
 	}
 	basekey := make([]byte, 32)
-	db, err := NewDbStore(dir, MakeHashFunc(defaultHash), defaultDbCapacity, func(k Key) (ret uint8) { return uint8(Proximity(basekey[:], k[:])) })
+	db, err := NewDbStore(dir, MakeHashFunc(DefaultHash), defaultDbCapacity, func(k Key) (ret uint8) { return uint8(Proximity(basekey[:], k[:])) })
 
 	return &testDbStore{db, dir}, err
 }

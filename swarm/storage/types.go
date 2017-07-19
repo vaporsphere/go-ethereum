@@ -210,22 +210,13 @@ func NewChunk(key Key, rs *RequestStatus) *Chunk {
 
 func FakeChunk(size int64, count int, chunks []Chunk) int {
 	var i int
-	hasher := MakeHashFunc(defaultHash)()
+	hasher := MakeHashFunc(DefaultHash)()
 	chunksize := getDefaultChunkSize()
 	if size > chunksize {
 		size = chunksize
 	}
 
 	for i = 0; i < count; i++ {
-		/*
-			hasher.Reset()
-			data := make([]byte, size)
-			rand.Read(data)
-			binary.LittleEndian.PutUint64(data[8:], uint64(size))
-			hasher.Write(data)
-			chunks[i].SData = make([]byte, chunksize)
-			copy(chunks[i].SData, hasher.Sum(nil))
-		*/
 		hasher.Reset()
 		chunks[i].SData = make([]byte, size)
 		rand.Read(chunks[i].SData)
@@ -239,7 +230,7 @@ func FakeChunk(size int64, count int, chunks []Chunk) int {
 }
 
 func getDefaultChunkSize() int64 {
-	return defaultBranches * int64(MakeHashFunc(defaultHash)().Size())
+	return DefaultBranches * int64(MakeHashFunc(DefaultHash)().Size())
 
 }
 

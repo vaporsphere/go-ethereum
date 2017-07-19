@@ -82,11 +82,11 @@ type DbStore struct {
 // TODO: Instead of passing the distance function, just pass the address from which distances are calculated
 // to avoid the appearance of a pluggable distance metric and opportunities of bugs associated with providing
 // a function diferent from the one that is actually used.
-func NewDbStore(path string, hash SwarmHasher, capacity uint64, po func(Key) uint8) (*DbStore, error) {
-       s = new(DbStore)
-      s.hashfunc = hash
-      s.db, err = NewLDBDatabase(path)
-										if err != nil {
+func NewDbStore(path string, hash SwarmHasher, capacity uint64, po func(Key) uint8) (s *DbStore, err error) {
+	s = new(DbStore)
+	s.hashfunc = hash
+	s.db, err = NewLDBDatabase(path)
+	if err != nil {
 		return nil, err
 	}
 
@@ -643,11 +643,11 @@ func Import(sourcepath string, targetpath string, sourceaccountkey string, targe
 		return 0, fmt.Errorf("targetpath '%s' does not exist or is unavailable (someone else using it?)", targetpath)
 	}
 
-	store_source, err := NewDbStore(sourcepath, MakeHashFunc(defaultHash), defaultDbCapacity, pofunc_source)
+	store_source, err := NewDbStore(sourcepath, MakeHashFunc(DefaultHash), defaultDbCapacity, pofunc_source)
 	if err != nil {
 		return 0, err
 	}
-	store_target, err := NewDbStore(targetpath, MakeHashFunc(defaultHash), defaultDbCapacity, pofunc_target)
+	store_target, err := NewDbStore(targetpath, MakeHashFunc(DefaultHash), defaultDbCapacity, pofunc_target)
 	if err != nil {
 		return 0, err
 	}

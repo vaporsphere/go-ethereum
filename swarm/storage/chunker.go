@@ -82,10 +82,6 @@ func NewTreeChunker(params *ChunkerParams) (self *TreeChunker) {
 	return
 }
 
-// func (self *TreeChunker) KeySize() int64 {
-// 	return self.hashSize
-// }
-
 // String() for pretty printing
 func (self *Chunk) String() string {
 	return fmt.Sprintf("Key: %v TreeSize: %v Chunksize: %v", self.Key.Log(), self.Size, len(self.SData))
