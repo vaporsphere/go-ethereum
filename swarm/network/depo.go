@@ -118,7 +118,6 @@ func (self *Depo) HandleStoreRequestMsg(req *storeRequestMsgData, p *peer) {
 		// this should update access count?
 		log.Trace(fmt.Sprintf("Depo.HandleStoreRequest: %v found locally. ignore.", req))
 		islocal = true
-		//return
 	}
 
 	hasher := self.hashfunc()
@@ -136,7 +135,7 @@ func (self *Depo) HandleStoreRequestMsg(req *storeRequestMsgData, p *peer) {
 	// update chunk with size and data
 	chunk.SData = req.SData // protocol validates that SData is minimum 9 bytes long (int64 size  + at least one byte of data)
 	chunk.Size = int64(binary.LittleEndian.Uint64(req.SData[0:8]))
-	log.Trace(fmt.Sprintf("delivery of %v from %v", chunk, p))
+	log.Trace(fmt.Sprintf("Depo.HandleStoreRequest: delivery of %v from %v", chunk, p))
 	chunk.Source = p
 	self.netStore.Put(chunk)
 }
@@ -183,7 +182,6 @@ func (self *Depo) HandleRetrieveRequestMsg(req *retrieveRequestMsgData, p *peer)
 
 // add peer request the chunk and decides the timeout for the response if still searching
 func (self *Depo) strategyUpdateRequest(rs *storage.RequestStatus, origReq *retrieveRequestMsgData) (req *retrieveRequestMsgData) {
-	log.Trace(fmt.Sprintf("Depo.strategyUpdateRequest: key %v", origReq.Key.Log()))
 	// we do not create an alternative one
 	req = origReq
 	if rs != nil {
@@ -211,7 +209,6 @@ only add if less than requesterCount peers forwarded the same request id so far
 note this is done irrespective of status (searching or found)
 */
 func (self *Depo) addRequester(rs *storage.RequestStatus, req *retrieveRequestMsgData) {
-	log.Trace(fmt.Sprintf("Depo.addRequester: key %v - add peer to req.Id %v", req.Key.Log(), req.Id))
 	list := rs.Requesters[req.Id]
 	rs.Requesters[req.Id] = append(list, req)
 }

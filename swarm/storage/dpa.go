@@ -136,11 +136,8 @@ func (self *DPA) retrieveLoop() {
 
 func (self *DPA) retrieveWorker() {
 	for chunk := range self.retrieveC {
-		log.Trace(fmt.Sprintf("dpa: retrieve loop : chunk %v", chunk.Key.Log()))
 		storedChunk, err := self.Get(chunk.Key)
-		if err == notFound {
-			log.Trace(fmt.Sprintf("chunk %v not found", chunk.Key.Log()))
-		} else if err != nil {
+		if err != nil {
 			log.Trace(fmt.Sprintf("error retrieving chunk %v: %v", chunk.Key.Log(), err))
 		} else {
 			chunk.SData = storedChunk.SData
@@ -170,9 +167,7 @@ func (self *DPA) storeWorker() {
 	for chunk := range self.storeC {
 		self.Put(chunk)
 		if chunk.wg != nil {
-			log.Trace(fmt.Sprintf("dpa: store processor %v", chunk.Key.Log()))
 			chunk.wg.Done()
-
 		}
 		select {
 		case <-self.quitC:
@@ -201,7 +196,6 @@ func NewDpaChunkStore(localStore, netStore ChunkStore) *dpaChunkStore {
 // waits for response or times out
 func (self *dpaChunkStore) Get(key Key) (chunk *Chunk, err error) {
 	chunk, err = self.netStore.Get(key)
-	// timeout := time.Now().Add(searchTimeout)
 	if chunk.SData != nil {
 		log.Trace(fmt.Sprintf("DPA.Get: %v found locally, %d bytes", key.Log(), len(chunk.SData)))
 		return
@@ -240,5 +234,4 @@ func (self *dpaChunkStore) Put(entry *Chunk) {
 
 // Close chunk store
 func (self *dpaChunkStore) Close() {
-	return
 }

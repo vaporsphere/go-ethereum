@@ -49,15 +49,17 @@ usage: $0 [options]
 Boot a dev swarm cluster.
 
 OPTIONS:
-  -d, --dir DIR     Base directory to store node data [default: ${DEFAULT_BASE_DIR}]
-  -s, --size SIZE   Size of swarm cluster [default: ${DEFAULT_CLUSTER_SIZE}]
-  -h, --help        Show this message
+  -d, --dir DIR         Base directory to store node data [default: ${DEFAULT_BASE_DIR}]
+  -s, --size SIZE       Size of swarm cluster [default: ${DEFAULT_CLUSTER_SIZE}]
+  -p, --params PARAMS   Common params to pass to individual swarm processes
+  -h, --help            Show this message
 USAGE
 }
 
 main() {
   local base_dir="${DEFAULT_BASE_DIR}"
   local cluster_size="${DEFAULT_CLUSTER_SIZE}"
+  local params="--verbosity 6"
 
   parse_args "$@"
 
@@ -93,7 +95,13 @@ parse_args() {
         cluster_size="$2"
         shift 2
         ;;
-      *)
+      -p | --params)
+        if [[ -z "$2" ]]; then
+          fail "--params flag requires an argument"
+        fi
+        params="$2"
+        shift 2
+        ;;      *)
         break
         ;;
     esac
@@ -130,7 +138,6 @@ start_bootnode() {
   local args=(
     --addr      "${BOOTNODE_IP}:${BOOTNODE_PORT}"
     --nodekey   "${key_file}"
-    --verbosity "6"
   )
 
   start_node "bootnode" "${BOOTNODE_IP}" "$(which bootnode)" ${args[@]}
@@ -213,8 +220,9 @@ start_swarm_node() {
     --bzznetworkid "321"
     --bzzaccount   "${address}"
     --password     "${dir}/password"
-    --verbosity    "6"
     --debug
+    "${params}"
+
   )
 
   start_node "${name}" "${ip}" "$(which swarm)" ${args[@]}

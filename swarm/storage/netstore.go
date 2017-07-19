@@ -86,7 +86,7 @@ const (
 
 var (
 	// timeout interval before retrieval is timed out
-	searchTimeout = 30 * time.Second
+	searchTimeout = 5 * time.Second
 )
 
 // store logic common to local and network chunk store requests

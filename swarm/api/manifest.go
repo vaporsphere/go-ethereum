@@ -57,13 +57,16 @@ type ManifestList struct {
 }
 
 // NewManifest creates and stores a new, empty manifest
-func (a *Api) NewManifest() (storage.Key, error) {
+func (a *Api) NewManifest() (key storage.Key, err error) {
 	var manifest Manifest
 	data, err := json.Marshal(&manifest)
 	if err != nil {
 		return nil, err
 	}
-	return a.Store(bytes.NewReader(data), int64(len(data)), nil)
+	wg := sync.WaitGroup{}
+	key, err = a.Store(bytes.NewReader(data), int64(len(data)), &wg)
+	wg.Wait()
+	return key, err
 }
 
 // ManifestWriter is used to add and remove entries from an underlying manifest

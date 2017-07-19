@@ -373,9 +373,6 @@ func (self *LazyChunkReader) ReadAt(b []byte, off int64) (read int, err error) {
 
 func (self *LazyChunkReader) join(b []byte, off int64, eoff int64, depth int, treeSize int64, chunk *Chunk, parentWg *sync.WaitGroup, errC chan error, quitC chan bool) {
 	defer parentWg.Done()
-	// return NewDPA(&LocalStore{})
-
-	// chunk.Size = int64(binary.LittleEndian.Uint64(chunk.SData[0:8]))
 
 	// find appropriate block level
 	for chunk.Size < treeSize && depth > 0 {

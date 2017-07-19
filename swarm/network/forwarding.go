@@ -50,7 +50,7 @@ func generateId() uint64 {
 	return uint64(r.Int63())
 }
 
-var searchTimeout = 30 * time.Second
+var searchTimeout = 5 * time.Second
 
 // forwarding logic
 // logic propagating retrieve requests to peers given by the kademlia hive
@@ -59,7 +59,6 @@ func (self *forwarder) Retrieve(chunk *storage.Chunk) {
 	log.Trace(fmt.Sprintf("forwarder.Retrieve: %v - received %d peers from KΛÐΞMLIΛ...", chunk.Key.Log(), len(peers)))
 OUT:
 	for _, p := range peers {
-		log.Trace(fmt.Sprintf("forwarder.Retrieve: sending retrieveRequest %v to peer [%v]", chunk.Key.Log(), p))
 		for _, recipients := range chunk.Req.Requesters {
 			for _, recipient := range recipients {
 				req := recipient.(*retrieveRequestMsgData)
@@ -68,6 +67,7 @@ OUT:
 				}
 			}
 		}
+		log.Trace(fmt.Sprintf("forwarder.Retrieve: sending retrieveRequest %v to peer [%v]", chunk.Key.Log(), p))
 		req := &retrieveRequestMsgData{
 			Key: chunk.Key,
 			Id:  generateId(),

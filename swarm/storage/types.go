@@ -116,10 +116,10 @@ func (key Key) Hex() string {
 }
 
 func (key Key) Log() string {
-	if len(key[:]) < 4 {
+	if len(key[:]) < 8 {
 		return fmt.Sprintf("%x", []byte(key[:]))
 	}
-	return fmt.Sprintf("%08x", []byte(key[:4]))
+	return fmt.Sprintf("%016x", []byte(key[:8]))
 }
 
 func (key Key) String() string {
