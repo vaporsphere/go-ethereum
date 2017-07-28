@@ -23,9 +23,13 @@
 package storage
 
 import (
+	"archive/tar"
 	"bytes"
 	"encoding/binary"
+	"encoding/hex"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -69,15 +73,22 @@ type DbStore struct {
 	gcArray           []*gcItem
 
 	hashfunc Hasher
-
-	lock sync.Mutex
+	batchC   chan bool
+	quit     chan struct{}
+	batchesC chan struct{}
+	batch    *leveldb.Batch
+	lock     sync.RWMutex
 }
 
 func NewDbStore(path string, hash Hasher, capacity uint64, radius int) (s *DbStore, err error) {
 	s = new(DbStore)
 
 	s.hashfunc = hash
-
+	s.batchC = make(chan bool)
+	s.quit = make(chan struct{})
+	s.batchesC = make(chan struct{}, 1)
+	go s.writeBatches()
+	s.batch = new(leveldb.Batch)
 	s.db, err = NewLDBDatabase(path)
 	if err != nil {
 		return
@@ -91,15 +102,19 @@ func NewDbStore(path string, hash Hasher, capacity uint64, radius int) (s *DbSto
 
 	data, _ := s.db.Get(keyEntryCnt)
 	s.entryCnt = BytesToU64(data)
+	s.entryCnt++
 	data, _ = s.db.Get(keyAccessCnt)
 	s.accessCnt = BytesToU64(data)
+	s.accessCnt++
 	data, _ = s.db.Get(keyDataIdx)
 	s.dataIdx = BytesToU64(data)
+	s.dataIdx++
+
 	s.gcPos, _ = s.db.Get(keyGCPos)
 	if s.gcPos == nil {
 		s.gcPos = s.gcStartPos
 	}
-	return
+	return s, nil
 }
 
 type dpaDBIndex struct {
@@ -246,8 +261,6 @@ func (s *DbStore) collectGarbage(ratio float32) {
 	cutidx := gcListSelect(s.gcArray, 0, gcnt-1, int(float32(gcnt)*ratio))
 	cutval := s.gcArray[cutidx].value
 
-	// fmt.Print(gcnt, " ", s.entryCnt, " ")
-
 	// actual gc
 	for i := 0; i < gcnt; i++ {
 		if s.gcArray[i].value <= cutval {
@@ -255,9 +268,93 @@ func (s *DbStore) collectGarbage(ratio float32) {
 		}
 	}
 
-	// fmt.Println(s.entryCnt)
-
 	s.db.Put(keyGCPos, s.gcPos)
+}
+
+// Export writes all chunks from the store to a tar archive, returning the
+// number of chunks written.
+func (s *DbStore) Export(out io.Writer) (int64, error) {
+	tw := tar.NewWriter(out)
+	defer tw.Close()
+
+	it := s.db.NewIterator()
+	defer it.Release()
+	var count int64
+	for ok := it.Seek([]byte{kpIndex}); ok; ok = it.Next() {
+		key := it.Key()
+		if (key == nil) || (key[0] != kpIndex) {
+			break
+		}
+
+		var index dpaDBIndex
+		decodeIndex(it.Value(), &index)
+
+		data, err := s.db.Get(getDataKey(index.Idx))
+		if err != nil {
+			log.Warn(fmt.Sprintf("Chunk %x found but could not be accessed: %v", key[:], err))
+			continue
+		}
+
+		hdr := &tar.Header{
+			Name: hex.EncodeToString(key[1:]),
+			Mode: 0644,
+			Size: int64(len(data)),
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			return count, err
+		}
+		if _, err := tw.Write(data); err != nil {
+			return count, err
+		}
+		count++
+	}
+
+	return count, nil
+}
+
+// Import reads chunks into the store from a tar archive, returning the number
+// of chunks read.
+func (s *DbStore) Import(in io.Reader) (int64, error) {
+	tr := tar.NewReader(in)
+
+	var count int64
+	var wg sync.WaitGroup
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			break
+		} else if err != nil {
+			return count, err
+		}
+
+		if len(hdr.Name) != 64 {
+			log.Warn("ignoring non-chunk file", "name", hdr.Name)
+			continue
+		}
+
+		key, err := hex.DecodeString(hdr.Name)
+		if err != nil {
+			log.Warn("ignoring invalid chunk file", "name", hdr.Name, "err", err)
+			continue
+		}
+
+		data, err := ioutil.ReadAll(tr)
+		if err != nil {
+			return count, err
+		}
+		chunk := &Chunk{Key: key, SData: data}
+		s.Put(chunk)
+		if chunk.dbStored != nil {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-chunk.dbStored
+			}()
+		}
+		count++
+	}
+	wg.Wait()
+	return count, nil
 }
 
 func (s *DbStore) Cleanup() {
@@ -307,55 +404,9 @@ func (s *DbStore) delete(idx uint64, idxKey []byte) {
 }
 
 func (s *DbStore) Counter() uint64 {
-	s.lock.Lock()
-	defer s.lock.Unlock()
+	s.lock.RLock()
+	defer s.lock.RUnlock()
 	return s.dataIdx
-}
-
-func (s *DbStore) Put(chunk *Chunk) {
-	s.lock.Lock()
-	defer s.lock.Unlock()
-
-	ikey := getIndexKey(chunk.Key)
-	var index dpaDBIndex
-
-	if s.tryAccessIdx(ikey, &index) {
-		if chunk.dbStored != nil {
-			close(chunk.dbStored)
-		}
-		log.Trace(fmt.Sprintf("Storing to DB: chunk already exists, only update access"))
-		return // already exists, only update access
-	}
-
-	data := encodeData(chunk)
-	//data := ethutil.Encode([]interface{}{entry})
-
-	if s.entryCnt >= s.capacity {
-		s.collectGarbage(gcArrayFreeRatio)
-	}
-
-	batch := new(leveldb.Batch)
-
-	batch.Put(getDataKey(s.dataIdx), data)
-
-	index.Idx = s.dataIdx
-	s.updateIndexAccess(&index)
-
-	idata := encodeIndex(&index)
-	batch.Put(ikey, idata)
-
-	batch.Put(keyEntryCnt, U64ToBytes(s.entryCnt))
-	s.entryCnt++
-	batch.Put(keyDataIdx, U64ToBytes(s.dataIdx))
-	s.dataIdx++
-	batch.Put(keyAccessCnt, U64ToBytes(s.accessCnt))
-	s.accessCnt++
-
-	s.db.Write(batch)
-	if chunk.dbStored != nil {
-		close(chunk.dbStored)
-	}
-	log.Trace(fmt.Sprintf("DbStore.Put: %v. db storage counter: %v ", chunk.Key.Log(), s.dataIdx))
 }
 
 // try to find index; if found, update access cnt and return true
@@ -365,18 +416,85 @@ func (s *DbStore) tryAccessIdx(ikey []byte, index *dpaDBIndex) bool {
 		return false
 	}
 	decodeIndex(idata, index)
-
-	batch := new(leveldb.Batch)
-
-	batch.Put(keyAccessCnt, U64ToBytes(s.accessCnt))
+	s.batch.Put(keyAccessCnt, U64ToBytes(s.accessCnt))
 	s.accessCnt++
-	s.updateIndexAccess(index)
+	index.Access = s.accessCnt
 	idata = encodeIndex(index)
-	batch.Put(ikey, idata)
-
-	s.db.Write(batch)
-
+	s.batch.Put(ikey, idata)
 	return true
+}
+
+func (s *DbStore) Put(chunk *Chunk) {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+
+	ikey := getIndexKey(chunk.Key)
+	var index dpaDBIndex
+
+	idata, err := s.db.Get(ikey)
+	if err != nil {
+		s.doPut(chunk, ikey, &index)
+	} else {
+		log.Trace(fmt.Sprintf("DbStore: chunk already exists, only update access"))
+		decodeIndex(idata, &index)
+	}
+	index.Access = s.accessCnt
+	s.accessCnt++
+	idata = encodeIndex(&index)
+	s.batch.Put(ikey, idata)
+	chunk.dbStored = s.batchC
+	select {
+	case <-s.quit:
+	default:
+		select {
+		case s.batchesC <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// force putting into db, does not check access index
+func (s *DbStore) doPut(chunk *Chunk, ikey []byte, index *dpaDBIndex) {
+	data := encodeData(chunk)
+	s.batch.Put(getDataKey(s.dataIdx), data)
+	index.Idx = s.dataIdx
+	s.entryCnt++
+	s.dataIdx++
+	log.Trace(fmt.Sprintf("DbStore.Put: %v. db storage counter: %v ", chunk.Key.Log(), s.dataIdx))
+}
+
+func (s *DbStore) writeBatches() {
+	for range s.batchesC {
+		s.lock.Lock()
+		b := s.batch
+		e := s.entryCnt
+		d := s.dataIdx
+		a := s.accessCnt
+		c := s.batchC
+		s.batchC = make(chan bool)
+		s.batch = new(leveldb.Batch)
+		s.lock.Unlock()
+		log.Trace(fmt.Sprintf("DbStore: spawn batch write (%d chunks) ", b.Len()))
+		s.writeBatch(b, e, d, a)
+		close(c)
+		if e >= s.capacity {
+			log.Trace(fmt.Sprintf("DbStore: collecting garbage...(%d chunks)", e))
+			s.collectGarbage(gcArrayFreeRatio)
+		}
+	}
+	log.Trace(fmt.Sprintf("DbStore: quit batch write loop"))
+}
+
+// must be called non concurrently
+func (s *DbStore) writeBatch(b *leveldb.Batch, entryCnt, dataIdx, accessCnt uint64) {
+	b.Put(keyEntryCnt, U64ToBytes(entryCnt))
+	b.Put(keyDataIdx, U64ToBytes(dataIdx))
+	b.Put(keyAccessCnt, U64ToBytes(accessCnt))
+	l := s.batch.Len()
+	if err := s.db.Write(b); err != nil {
+		log.Error(fmt.Sprintf("unable to write batch: %v", err))
+	}
+	log.Trace(fmt.Sprintf("DbStore: batch write (%d chunks) complete", l))
 }
 
 func (s *DbStore) Get(key Key) (chunk *Chunk, err error) {
@@ -451,6 +569,7 @@ func (s *DbStore) getEntryCnt() uint64 {
 }
 
 func (s *DbStore) Close() {
+	close(s.quit)
 	s.db.Close()
 }
 
