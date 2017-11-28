@@ -52,7 +52,6 @@ var (
 var services = newServices()
 
 func init() {
-
 	flag.Parse()
 	rand.Seed(time.Now().Unix())
 
@@ -482,16 +481,31 @@ func testAsymSend(t *testing.T) {
 	}
 }
 
+type Job struct {
+	Msg      []byte
+	SendNode discover.NodeID
+	RecvNode discover.NodeID
+}
+
+func worker(id int, jobs <-chan Job, rpcs map[discover.NodeID]*rpc.Client, pubkeys map[discover.NodeID][]byte, hextopic string) {
+	for j := range jobs {
+		rpcs[j.SendNode].Call(nil, "pss_sendAsym", common.ToHex(pubkeys[j.RecvNode]), hextopic, j.Msg)
+	}
+}
+
 // params in run name:
 // nodes/msgs/addrbytes/adaptertype
 // if adaptertype is exec uses execadapter, simadapter otherwise
 func TestNetwork(t *testing.T) {
-	//t.Run("8/1024/2/exec", testNetwork)
-	t.Run("256/128/4/sock", testNetwork)
+	t.Run("3/2000/4/sock", testNetwork)
+	t.Run("4/2000/4/sock", testNetwork)
+	t.Run("8/2000/4/sock", testNetwork)
+	t.Run("16/2000/4/sock", testNetwork)
+	t.Run("32/2000/4/sock", testNetwork)
+	t.Run("64/2000/4/sim", testNetwork)
 }
 
 func testNetwork(t *testing.T) {
-
 	type msgnotifyC struct {
 		id     discover.NodeID
 		msgIdx int
@@ -503,8 +517,9 @@ func testNetwork(t *testing.T) {
 	nodecount, _ := strconv.ParseInt(paramstring[1], 10, 0)
 	msgcount, _ := strconv.ParseInt(paramstring[2], 10, 0)
 	addrsize, _ := strconv.ParseInt(paramstring[3], 10, 0)
-	messagedelayvarianceusec := (int(msgcount)/1000 + 1) * 1000 * 1000
-	log.Info("network test", "nodecount", nodecount, "msgcount", msgcount, "addrhintsize", addrsize, "sendtimevariance", messagedelayvarianceusec/(1000*1000))
+	adapter := paramstring[4]
+
+	log.Info("network test", "nodecount", nodecount, "msgcount", msgcount, "addrhintsize", addrsize)
 
 	nodes := make([]discover.NodeID, nodecount)
 	bzzaddrs := make(map[discover.NodeID][]byte, nodecount)
@@ -517,26 +532,26 @@ func testNetwork(t *testing.T) {
 
 	trigger := make(chan discover.NodeID)
 
-	var adapter adapters.NodeAdapter
-	if paramstring[4] == "exec" {
+	var a adapters.NodeAdapter
+	if adapter == "exec" {
 		dirname, err := ioutil.TempDir(".", "")
 		if err != nil {
 			t.Fatal(err)
 		}
-		adapter = adapters.NewExecAdapter(dirname)
-	} else if paramstring[4] == "sock" {
-		adapter = adapters.NewSocketAdapter(services)
-	} else if paramstring[4] == "tcp" {
-		adapter = adapters.NewTCPAdapter(services)
-	} else {
-		adapter = adapters.NewSocketAdapter(services)
+		a = adapters.NewExecAdapter(dirname)
+	} else if adapter == "sock" {
+		a = adapters.NewSocketAdapter(services)
+	} else if adapter == "tcp" {
+		a = adapters.NewTCPAdapter(services)
+	} else if adapter == "sim" {
+		a = adapters.NewSimAdapter(services)
 	}
-	net := simulations.NewNetwork(adapter, &simulations.NetworkConfig{
+	net := simulations.NewNetwork(a, &simulations.NetworkConfig{
 		ID: "0",
 	})
 	defer net.Shutdown()
 
-	f, err := os.Open(fmt.Sprintf("testdata/snapshot_%s.json", paramstring[1]))
+	f, err := os.Open(fmt.Sprintf("testdata/snapshot_%d.json", nodecount))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -606,7 +621,12 @@ func testNetwork(t *testing.T) {
 		}
 	}
 
-	messagedelayhigh := 0
+	// setup workers
+	jobs := make(chan Job, 10)
+	for w := 1; w <= 10; w++ {
+		go worker(w, jobs, rpcs, pubkeys, hextopic)
+	}
+
 	for i := 0; i < int(msgcount); i++ {
 		sendnodeidx := rand.Intn(int(nodecount))
 		recvnodeidx := rand.Intn(int(nodecount - 1))
@@ -627,30 +647,16 @@ func testNetwork(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		messagedelay := rand.Intn(messagedelayvarianceusec)
-		if messagedelay > messagedelayhigh {
-			messagedelayhigh = messagedelay
-		}
-		messagedelayduration, err := time.ParseDuration(fmt.Sprintf("%dus", messagedelay))
-		if err != nil {
-			t.Fatal(err)
-		}
-		go func(msg []byte) {
-			time.Sleep(messagedelayduration)
-			err = rpcs[nodes[sendnodeidx]].Call(nil, "pss_sendAsym", common.ToHex(pubkeys[nodes[recvnodeidx]]), hextopic, msg)
-			if err != nil {
-				t.Fatal(err)
-			}
-		}(sentmsgs[i])
-	}
 
-	timeout, err := time.ParseDuration(fmt.Sprintf("%dus", 60000000+messagedelayhigh))
-	if err != nil {
-		t.Fatal(err)
+		jobs <- Job{
+			Msg:      sentmsgs[i],
+			SendNode: nodes[sendnodeidx],
+			RecvNode: nodes[recvnodeidx],
+		}
 	}
 
 	finalmsgcount := 0
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 outer:
 	for i := 0; i < int(msgcount); i++ {
