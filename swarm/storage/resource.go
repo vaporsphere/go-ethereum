@@ -20,8 +20,20 @@ const (
 	signatureLength = 65
 	indexSize       = 16
 	dbDirName       = "resource"
-	chunkSize       = 4096 // temporary until we implement DPA in the resourcehandler
 )
+
+var (
+	defaultChunkSize int64
+	defaultHashName  string
+)
+
+// Extract sane defaults from the chunker implementation
+func init() {
+	params := NewChunkerParams()
+	defaultHashName = params.Hash
+	hashsize := int64(MakeHashFunc(defaultHashName)().Size())
+	defaultChunkSize = params.Branches * hashsize
+}
 
 type Signature [signatureLength]byte
 
@@ -32,6 +44,7 @@ type nameHashFunc func(string) common.Hash
 // Encapsulates an specific resource update. When synced it contains the most recent
 // version of the resource update data.
 type resource struct {
+	chunkSize  int64
 	name       *string
 	nameHash   common.Hash
 	startBlock uint64
@@ -163,17 +176,12 @@ func NewResourceHandler(datadir string, cloudStore CloudStore, rpcClient *rpc.Cl
 	return rh, nil
 }
 
-// \TODO should be hashsize * branches from the chosen chunker, implement with dpa
-func (self *ResourceHandler) chunkSize() int64 {
-	return chunkSize
-}
-
 // Creates a new root entry for a mutable resource identified by `name` with the specified `frequency`.
 //
 // The signature data should match the hash of the idna-converted name by the validator's namehash function, NOT the raw name bytes.
 //
 // The start block of the resource update will be the actual current block height of the connected network.
-func (self *ResourceHandler) NewResource(name string, frequency uint64) (*resource, error) {
+func (self *ResourceHandler) NewResource(name string, frequency uint64, chunkSize int64) (*resource, error) {
 
 	// frequency 0 is invalid
 	if frequency == 0 {
@@ -220,9 +228,15 @@ func (self *ResourceHandler) NewResource(name string, frequency uint64) (*resour
 	binary.LittleEndian.PutUint64(val, frequency)
 	copy(chunk.SData[8:], val)
 	self.Put(chunk)
-	log.Debug("new resource", "name", name, "key", nameHash, "startBlock", currentblock, "frequency", frequency)
+
+	if chunkSize == 0 {
+		chunkSize = defaultChunkSize
+	}
+
+	log.Debug("new resource", "name", name, "key", nameHash, "startBlock", currentblock, "frequency", frequency, "chunksize", chunkSize)
 
 	rsrc := &resource{
+		chunkSize:  chunkSize,
 		name:       &name,
 		nameHash:   nameHash,
 		startBlock: currentblock,
@@ -239,7 +253,7 @@ func (self *ResourceHandler) NewResource(name string, frequency uint64) (*resour
 //
 //
 // If refresh is set to true, the resource data will be reloaded from the resource update
-// root chunk.
+// root chunk64.
 // It is the callers responsibility to make sure that this chunk exists (if the resource
 // update root data was retrieved externally, it typically doesn't)
 func (self *ResourceHandler) LookupVersion(name string, period uint32, version uint32, refresh bool) (*resource, error) {
@@ -453,7 +467,7 @@ func (self *ResourceHandler) Update(name string, data []byte) (Key, error) {
 	}
 
 	// an update can be only one chunk long
-	datalimit := self.chunkSize() - int64(sigoffset-len(name)-8)
+	datalimit := rsrc.chunkSize - int64(sigoffset-len(name)-8)
 	if int64(len(data)) > datalimit {
 		return nil, fmt.Errorf("Data overflow: %d / %d bytes", len(data), datalimit)
 	}

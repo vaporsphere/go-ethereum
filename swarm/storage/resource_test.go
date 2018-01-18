@@ -153,7 +153,7 @@ func TestResourceHandler(t *testing.T) {
 	if err != nil {
 		teardownTest(t, err)
 	}
-	_, err = rh.NewResource(safeName, resourceFrequency)
+	_, err = rh.NewResource(safeName, resourceFrequency, 0)
 	if err != nil {
 		teardownTest(t, err)
 	}
@@ -289,7 +289,7 @@ func TestResourceENSOwner(t *testing.T) {
 	}
 
 	// create new resource when we are owner = ok
-	_, err = rh.NewResource(safeName, resourceFrequency)
+	_, err = rh.NewResource(safeName, resourceFrequency, 0)
 	if err != nil {
 		teardownTest(t, fmt.Errorf("Create resource fail: %v", err))
 	}
