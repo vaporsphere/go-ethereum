@@ -23,7 +23,6 @@ import (
 	"os"
 	"reflect"
 	"strconv"
-	"strings"
 	"unicode"
 
 	cli "gopkg.in/urfave/cli.v1"
@@ -103,15 +102,10 @@ func buildConfig(ctx *cli.Context) (config *bzzapi.Config, err error) {
 	config = bzzapi.NewConfig()
 	//first load settings from config file (if provided)
 	config, err = configFileOverride(config, ctx)
-	if err != nil {
-		return nil, err
-	}
 	//override settings provided by environment variables
 	config = envVarsOverride(config)
 	//override settings provided by command line
 	config = cmdLineOverride(config, ctx)
-	//validate configuration parameters
-	err = validateConfig(config)
 
 	return
 }
@@ -205,16 +199,12 @@ func cmdLineOverride(currentConfig *bzzapi.Config, ctx *cli.Context) *bzzapi.Con
 		utils.Fatalf(SWARM_ERR_SWAP_SET_NO_API)
 	}
 
+	//EnsApi can be set to "", so can't check for empty string, as it is allowed!
 	if ctx.GlobalIsSet(EnsAPIFlag.Name) {
-		ensAPIs := ctx.GlobalStringSlice(EnsAPIFlag.Name)
-		// preserve backward compatibility to disable ENS with --ens-api=""
-		if len(ensAPIs) == 1 && ensAPIs[0] == "" {
-			ensAPIs = nil
-		}
-		currentConfig.EnsAPIs = ensAPIs
+		currentConfig.EnsApi = ctx.GlobalString(EnsAPIFlag.Name)
 	}
 
-	if ensaddr := ctx.GlobalString(DeprecatedEnsAddrFlag.Name); ensaddr != "" {
+	if ensaddr := ctx.GlobalString(EnsAddrFlag.Name); ensaddr != "" {
 		currentConfig.EnsRoot = common.HexToAddress(ensaddr)
 	}
 
@@ -301,8 +291,9 @@ func envVarsOverride(currentConfig *bzzapi.Config) (config *bzzapi.Config) {
 		utils.Fatalf(SWARM_ERR_SWAP_SET_NO_API)
 	}
 
-	if ensapi := os.Getenv(SWARM_ENV_ENS_API); ensapi != "" {
-		currentConfig.EnsAPIs = strings.Split(ensapi, ",")
+	//EnsApi can be set to "", so can't check for empty string, as it is allowed
+	if ensapi, exists := os.LookupEnv(SWARM_ENV_ENS_API); exists {
+		currentConfig.EnsApi = ensapi
 	}
 
 	if ensaddr := os.Getenv(SWARM_ENV_ENS_ADDR); ensaddr != "" {
@@ -349,43 +340,6 @@ func checkDeprecated(ctx *cli.Context) {
 	if ctx.GlobalString(DeprecatedEthAPIFlag.Name) != "" {
 		utils.Fatalf("--ethapi is no longer a valid command line flag, please use --ens-api and/or --swap-api.")
 	}
-	// warn if --ens-api flag is set
-	if ctx.GlobalString(DeprecatedEnsAddrFlag.Name) != "" {
-		log.Warn("--ens-addr is no longer a valid command line flag, please use --ens-api to specify contract address.")
-	}
-}
-
-//validate configuration parameters
-func validateConfig(cfg *bzzapi.Config) (err error) {
-	for _, ensAPI := range cfg.EnsAPIs {
-		if ensAPI != "" {
-			if err := validateEnsAPIs(ensAPI); err != nil {
-				return fmt.Errorf("invalid format [tld:][contract-addr@]url for ENS API endpoint configuration %q: %v", ensAPI, err)
-			}
-		}
-	}
-	return nil
-}
-
-//validate EnsAPIs configuration parameter
-func validateEnsAPIs(s string) (err error) {
-	// missing contract address
-	if strings.HasPrefix(s, "@") {
-		return errors.New("missing contract address")
-	}
-	// missing url
-	if strings.HasSuffix(s, "@") {
-		return errors.New("missing url")
-	}
-	// missing tld
-	if strings.HasPrefix(s, ":") {
-		return errors.New("missing tld")
-	}
-	// missing url
-	if strings.HasSuffix(s, ":") {
-		return errors.New("missing url")
-	}
-	return nil
 }
 
 //print a Config as string

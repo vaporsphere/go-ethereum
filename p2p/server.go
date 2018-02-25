@@ -36,7 +36,9 @@ import (
 )
 
 const (
-	defaultDialTimeout = 15 * time.Second
+	defaultDialTimeout      = 15 * time.Second
+	refreshPeersInterval    = 30 * time.Second
+	staticPeerCheckInterval = 15 * time.Second
 
 	// Connectivity defaults.
 	maxActiveDialTasks     = 16

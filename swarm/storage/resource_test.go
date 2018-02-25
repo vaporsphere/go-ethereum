@@ -65,7 +65,7 @@ func (f *fakeBackend) Commit() {
 	f.blocknumber++
 }
 
-func (f *fakeBackend) HeaderByNumber(context context.Context, name string, bigblock *big.Int) (*types.Header, error) {
+func (f *fakeBackend) HeaderByNumber(context context.Context, bigblock *big.Int) (*types.Header, error) {
 	f.blocknumber++
 	biggie := big.NewInt(f.blocknumber)
 	return &types.Header{
@@ -411,11 +411,10 @@ func TestResourceENSOwner(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ensClient, err := ens.NewENS(transactOpts, contractAddr, contractbackend)
+	validator, err := NewENSValidator(contractAddr, contractbackend, transactOpts, signer.signContent)
 	if err != nil {
 		t.Fatal(err)
 	}
-	validator := NewENSValidator(contractAddr, newTestResolver(ensClient), signer.signContent)
 
 	// set up rpc and create resourcehandler with ENS sim backend
 	rh, _, _, teardownTest, err := setupTest(contractbackend, validator)
@@ -459,7 +458,7 @@ func fwdBlocks(count int, backend *fakeBackend) {
 }
 
 // create rpc and resourcehandler
-func setupTest(backend headerGetter, validator ResourceValidator) (rh *ResourceHandler, datadir string, signer *testSigner, teardown func(), err error) {
+func setupTest(backend ethApi, validator ResourceValidator) (rh *ResourceHandler, datadir string, signer *testSigner, teardown func(), err error) {
 
 	var fsClean func()
 	var rpcClean func()
@@ -571,7 +570,7 @@ func (self *testValidator) checkAccess(name string, address common.Address) (boo
 	return true, nil
 }
 
-func (self *testValidator) NameHash(name string) common.Hash {
+func (self *testValidator) nameHash(name string) common.Hash {
 	return self.hashFunc(name)
 }
 
@@ -585,19 +584,4 @@ func getUpdateDirect(rh *ResourceHandler, key Key) ([]byte, error) {
 		return nil, err
 	}
 	return data, nil
-}
-
-type testResolver struct {
-	ens *ens.ENS
-}
-
-func newTestResolver(ens *ens.ENS) *testResolver {
-	return &testResolver{
-		ens: ens,
-	}
-}
-
-func (r *testResolver) ValidateOwner(name string, address common.Address) (bool, error) {
-	addr, err := r.ens.Owner(ens.EnsNode(name))
-	return addr == address, err
 }
