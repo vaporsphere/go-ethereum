@@ -19,10 +19,13 @@ package storage
 import (
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"sync"
 	"time"
+
+	"github.com/davecgh/go-spew/spew"
 )
 
 /*
@@ -408,6 +411,7 @@ func (self *PyramidChunker) prepareChunks(isAppend bool, chunkLevel [][]*TreeEnt
 	}
 
 	for index := 0; ; index++ {
+		fmt.Println("=====================")
 		var err error
 		chunkData := make([]byte, self.chunkSize+8)
 
@@ -421,7 +425,13 @@ func (self *PyramidChunker) prepareChunks(isAppend bool, chunkLevel [][]*TreeEnt
 		res, err := ioutil.ReadAll(io.LimitReader(data, int64(maxBuf)))
 		copy(chunkData[readBytes:], res)
 
+		fmt.Println("chunkData:")
+		spew.Dump(chunkData[:30])
+
 		readBytes = len(res)
+
+		fmt.Println("readBytes:")
+		spew.Dump(readBytes)
 		if err != nil {
 			if err == io.EOF || err == io.ErrUnexpectedEOF {
 				if parent.branchCount == 1 {
@@ -446,6 +456,8 @@ func (self *PyramidChunker) prepareChunks(isAppend bool, chunkLevel [][]*TreeEnt
 
 			// update tree related parent data structures
 			parent.subtreeSize += uint64(readBytes)
+			fmt.Println("parent.subtreeSize:")
+			spew.Dump(parent.subtreeSize)
 			parent.branchCount++
 
 			// Data got exhausted... signal to send any parent tree related chunks

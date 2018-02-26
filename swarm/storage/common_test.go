@@ -170,7 +170,7 @@ func (r *brokenLimitedReader) Read(buf []byte) (int, error) {
 	return r.lr.Read(buf)
 }
 
-func testDataReaderAndSlice(l int) (r io.Reader, slice []byte) {
+func generateRandomData(l int) (r io.Reader, slice []byte) {
 	slice = make([]byte, l)
 	if _, err := rand.Read(slice); err != nil {
 		panic("rand error")
