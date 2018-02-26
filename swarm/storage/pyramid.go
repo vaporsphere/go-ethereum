@@ -411,27 +411,22 @@ func (self *PyramidChunker) prepareChunks(isAppend bool, chunkLevel [][]*TreeEnt
 	}
 
 	for index := 0; ; index++ {
-		fmt.Println("=====================")
 		var err error
 		chunkData := make([]byte, self.chunkSize+8)
 
 		maxBuf := len(chunkData)
-		readBytes := 8
+		offset := 8
+		var readBytes int
 		if unFinishedChunk != nil {
 			copy(chunkData, unFinishedChunk.SData)
 			readBytes += int(unFinishedChunk.Size)
 			unFinishedChunk = nil
 		}
 		res, err := ioutil.ReadAll(io.LimitReader(data, int64(maxBuf)))
-		copy(chunkData[readBytes:], res)
+		copy(chunkData[offset+readBytes:], res)
 
-		fmt.Println("chunkData:")
-		spew.Dump(chunkData[:30])
+		readBytes += len(res)
 
-		readBytes = len(res)
-
-		fmt.Println("readBytes:")
-		spew.Dump(readBytes)
 		if err != nil {
 			if err == io.EOF || err == io.ErrUnexpectedEOF {
 				if parent.branchCount == 1 {
