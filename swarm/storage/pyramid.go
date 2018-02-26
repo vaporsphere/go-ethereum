@@ -20,6 +20,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"io"
+	"io/ioutil"
 	"sync"
 	"time"
 )
@@ -370,7 +371,6 @@ func (self *PyramidChunker) prepareChunks(isAppend bool, chunkLevel [][]*TreeEnt
 	defer wg.Done()
 
 	chunkWG := &sync.WaitGroup{}
-	totalDataSize := 0
 
 	self.incrementWorkerCount()
 
@@ -380,7 +380,6 @@ func (self *PyramidChunker) prepareChunks(isAppend bool, chunkLevel [][]*TreeEnt
 	var unFinishedChunk *Chunk
 
 	if isAppend && len(chunkLevel[0]) != 0 {
-
 		lastIndex := len(chunkLevel[0]) - 1
 		ent := chunkLevel[0][lastIndex]
 
@@ -400,7 +399,6 @@ func (self *PyramidChunker) prepareChunks(isAppend bool, chunkLevel [][]*TreeEnt
 
 			unFinishedChunk = retrieve(lastKey, chunkC, quitC)
 			if unFinishedChunk.Size < self.chunkSize {
-
 				parent.subtreeSize = parent.subtreeSize - uint64(unFinishedChunk.Size)
 				parent.branchCount = parent.branchCount - 1
 			} else {
@@ -410,22 +408,20 @@ func (self *PyramidChunker) prepareChunks(isAppend bool, chunkLevel [][]*TreeEnt
 	}
 
 	for index := 0; ; index++ {
-
-		var n int
 		var err error
 		chunkData := make([]byte, self.chunkSize+8)
-		//maxBuf := len(chunkData)
-		//readBytes := 8
+
+		maxBuf := len(chunkData)
+		readBytes := 8
 		if unFinishedChunk != nil {
 			copy(chunkData, unFinishedChunk.SData)
-			n, err = data.Read(chunkData[8+unFinishedChunk.Size:])
-			n += int(unFinishedChunk.Size)
+			readBytes += int(unFinishedChunk.Size)
 			unFinishedChunk = nil
-		} else {
-			n, err = data.Read(chunkData[8:])
 		}
+		res, err := ioutil.ReadAll(io.LimitReader(data, int64(maxBuf)))
+		copy(chunkData[readBytes:], res)
 
-		totalDataSize += n
+		readBytes = len(res)
 		if err != nil {
 			if err == io.EOF || err == io.ErrUnexpectedEOF {
 				if parent.branchCount == 1 {
@@ -442,19 +438,18 @@ func (self *PyramidChunker) prepareChunks(isAppend bool, chunkLevel [][]*TreeEnt
 		}
 
 		// Data ended in chunk boundary.. just signal to start bulding tree
-		if n == 0 {
+		if readBytes == 0 {
 			self.buildTree(isAppend, chunkLevel, parent, chunkWG, jobC, quitC, true, rootKey)
 			break
 		} else {
-
-			pkey := self.enqueueDataChunk(chunkData, uint64(n), parent, chunkWG, jobC, quitC)
+			pkey := self.enqueueDataChunk(chunkData, uint64(readBytes), parent, chunkWG, jobC, quitC)
 
 			// update tree related parent data structures
-			parent.subtreeSize += uint64(n)
+			parent.subtreeSize += uint64(readBytes)
 			parent.branchCount++
 
 			// Data got exhausted... signal to send any parent tree related chunks
-			if int64(n) < self.chunkSize {
+			if int64(readBytes) < self.chunkSize {
 
 				// only one data chunk .. so dont add any parent chunk
 				if parent.branchCount <= 1 {

@@ -283,7 +283,7 @@ func testRandomDataAppend(splitter Splitter, n, m int, tester *chunkerTester) {
 	newOutput := make([]byte, n+m)
 	r, err := reader.Read(newOutput)
 	if r != (n + m) {
-		tester.t.Fatalf("read error  read: %v  n = %v  err = %v\n", r, n, err)
+		tester.t.Fatalf("read error  read: %v  n = %v  m = %v  err = %v\n", r, n, m, err)
 	}
 
 	newInput := append(input, appendInput...)
