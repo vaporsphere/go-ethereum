@@ -26,7 +26,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/davecgh/go-spew/spew"
 	"github.com/ethereum/go-ethereum/crypto/sha3"
 )
 
@@ -235,9 +234,6 @@ func testRandomData(splitter Splitter, n int, tester *chunkerTester) Key {
 	return key
 }
 
-func testRandomDataAppend(splitter Splitter, n, m int, tester *chunkerTester) {
-}
-
 func TestSha3ForCorrectness(t *testing.T) {
 	tester := &chunkerTester{t: t}
 
@@ -268,10 +264,8 @@ func TestSha3ForCorrectness(t *testing.T) {
 }
 
 func TestDataAppend(t *testing.T) {
-	//sizes := []int{1, 1, 1, 4095, 4096, 4097, 1, 1, 1, 123456, 2345678, 2345678}
-	//appendSizes := []int{4095, 4096, 4097, 1, 1, 1, 8191, 8192, 8193, 9000, 3000, 5000}
-	sizes := []int{3}
-	appendSizes := []int{8}
+	sizes := []int{1, 1, 1, 4095, 4096, 4097, 1, 1, 1, 123456, 2345678, 2345678}
+	appendSizes := []int{4095, 4096, 4097, 1, 1, 1, 8191, 8192, 8193, 9000, 3000, 5000}
 
 	tester := &chunkerTester{t: t}
 	for i, _ := range sizes {
@@ -289,9 +283,6 @@ func TestDataAppend(t *testing.T) {
 		} else {
 			data = io.LimitReader(bytes.NewReader(input), int64(n))
 		}
-
-		fmt.Println("input:")
-		spew.Dump(input)
 
 		chunkC := make(chan *Chunk, 1000)
 
@@ -313,9 +304,6 @@ func TestDataAppend(t *testing.T) {
 			appendData = io.LimitReader(bytes.NewReader(appendInput), int64(m))
 		}
 
-		fmt.Println("append input:")
-		spew.Dump(appendInput)
-
 		chunkC = make(chan *Chunk, 1000)
 
 		newKey, wait, err := tester.Append(chunker, key, appendData, chunkC, nil)
@@ -331,19 +319,13 @@ func TestDataAppend(t *testing.T) {
 		treeChunker := NewTreeChunker(NewChunkerParams())
 		reader := tester.Join(treeChunker, newKey, 0, chunkC, quitC)
 		newOutput := make([]byte, n+m)
-		_, err = reader.Read(newOutput)
-		//if r != (n + m) {
-		//tester.t.Fatalf("read error  read: %v  n = %v  m = %v  err = %v\n", r, n, m, err)
-		//}
+		r, err := reader.Read(newOutput)
+		if r != (n + m) {
+			tester.t.Fatalf("read error  read: %v  n = %v  m = %v  err = %v\n", r, n, m, err)
+		}
 
 		newInput := append(input, appendInput...)
 		if !bytes.Equal(newOutput, newInput) {
-
-			fmt.Println("input + appendInput:")
-			spew.Dump(newInput)
-			fmt.Println("output:")
-			spew.Dump(newOutput)
-
 			tester.t.Fatalf("input and output mismatch\n IN: %v\nOUT: %v\n", newInput, newOutput)
 		}
 

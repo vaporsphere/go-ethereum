@@ -19,13 +19,10 @@ package storage
 import (
 	"encoding/binary"
 	"errors"
-	"fmt"
 	"io"
 	"io/ioutil"
 	"sync"
 	"time"
-
-	"github.com/davecgh/go-spew/spew"
 )
 
 /*
@@ -451,8 +448,6 @@ func (self *PyramidChunker) prepareChunks(isAppend bool, chunkLevel [][]*TreeEnt
 
 			// update tree related parent data structures
 			parent.subtreeSize += uint64(readBytes)
-			fmt.Println("parent.subtreeSize:")
-			spew.Dump(parent.subtreeSize)
 			parent.branchCount++
 
 			// Data got exhausted... signal to send any parent tree related chunks
