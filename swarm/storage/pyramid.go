@@ -423,36 +423,47 @@ func (self *PyramidChunker) prepareChunks(isAppend bool, chunkLevel [][]*TreeEnt
 
 		var readBytes int
 
-		whichVersion := "old"
+		if unFinishedChunk != nil {
+			copy(chunkData, unFinishedChunk.SData)
+			readBytes += int(unFinishedChunk.Size)
+			unFinishedChunk = nil
+			log.Trace("pyramid.chunker: found unfinished chunk", "readBytes", readBytes)
+		}
 
+		whichVersion := "new"
 		if whichVersion == "new" {
 			// new version
 
-			if unFinishedChunk != nil {
-				copy(chunkData, unFinishedChunk.SData)
-				readBytes += int(unFinishedChunk.Size)
-				unFinishedChunk = nil
-				log.Trace("pyramid.chunker: found unfinished chunk", "readBytes", readBytes)
-			}
 			var res []byte
-			res, err = ioutil.ReadAll(io.LimitReader(data, int64(len(chunkData))))
+			res, err = ioutil.ReadAll(io.LimitReader(data, int64(len(chunkData)-(8+readBytes))))
+
+			// hack for ioutil.ReadAll
+			if len(res) == 0 && err == nil {
+				err = io.EOF
+			}
+			//fmt.Println("res new:")
+			//spew.Dump(res)
 			copy(chunkData[8+readBytes:], res)
+			//fmt.Println("after copy new:")
+			//spew.Dump(chunkData)
+
 			readBytes += len(res)
 			log.Trace("pyramid.chunker: copied all data", "readBytes", readBytes)
 		} else {
 			// old version
 
-			if unFinishedChunk != nil {
-				copy(chunkData, unFinishedChunk.SData)
-				readBytes += int(unFinishedChunk.Size)
-				unFinishedChunk = nil
-				log.Trace("pyramid.chunker: found unfinished chunk", "readBytes", readBytes)
-			}
 			var n int
 			n, err = data.Read(chunkData[8+readBytes:])
+			//fmt.Println("res old:")
+			//spew.Dump(chunkData[8+readBytes:])
+			//fmt.Println("after copy old:")
+			//spew.Dump(chunkData)
 			readBytes += n
 			log.Trace("pyramid.chunker: copied all data", "readBytes", readBytes)
 		}
+
+		//fmt.Println("the err")
+		//spew.Dump(err)
 
 		if err != nil {
 			if err == io.EOF || err == io.ErrUnexpectedEOF {
