@@ -24,13 +24,13 @@ import (
 	"fmt"
 	"hash"
 	"io"
-	"os"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/crypto/sha3"
 	"github.com/ethereum/go-ethereum/log"
+	colorable "github.com/mattn/go-colorable"
 )
 
 var (
@@ -39,7 +39,8 @@ var (
 
 func init() {
 	flag.Parse()
-	log.Root().SetHandler(log.LvlFilterHandler(log.Lvl(*loglevel), log.StreamHandler(os.Stderr, log.TerminalFormat(false))))
+	log.PrintOrigins(true)
+	log.Root().SetHandler(log.LvlFilterHandler(log.Lvl(*loglevel), log.StreamHandler(colorable.NewColorableStderr(), log.TerminalFormat(true))))
 }
 
 type brokenLimitedReader struct {

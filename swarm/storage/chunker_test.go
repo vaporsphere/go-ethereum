@@ -292,7 +292,6 @@ func TestDataAppend(t *testing.T) {
 			tester.t.Fatalf(err.Error())
 		}
 		wait()
-		tester.t.Logf(" Key = %v\n", key)
 
 		//create a append data stream
 		appendInput, found := tester.inputs[uint64(m)]
@@ -311,7 +310,6 @@ func TestDataAppend(t *testing.T) {
 			tester.t.Fatalf(err.Error())
 		}
 		wait()
-		tester.t.Logf(" NewKey = %v\n", newKey)
 
 		chunkC = make(chan *Chunk, 1000)
 		quitC := make(chan bool)
