@@ -125,3 +125,7 @@ func (self *Config) ShiftPrivateKey() (privKey *ecdsa.PrivateKey) {
 	}
 	return privKey
 }
+
+func (self *Config) PrivateKey() (privKey *ecdsa.PrivateKey) {
+	return self.privateKey
+}

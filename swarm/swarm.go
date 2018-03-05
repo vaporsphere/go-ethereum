@@ -271,7 +271,7 @@ func newEnsClient(endpoint string, addr common.Address, config *api.Config) (*en
 			log.Warn(fmt.Sprintf("could not determine ENS contract address, using default %s", ensRoot), "err", err)
 		}
 	}
-	transactOpts := bind.NewKeyedTransactor(config.Swap.PrivateKey())
+	transactOpts := bind.NewKeyedTransactor(config.PrivateKey())
 	dns, err := ens.NewENS(transactOpts, ensRoot, ethClient)
 	if err != nil {
 		return nil, err
