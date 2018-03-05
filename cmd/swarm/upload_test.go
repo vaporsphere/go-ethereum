@@ -57,6 +57,20 @@ func TestCLISwarmUp(t *testing.T) {
 	}
 }
 
+func TestCLISwarmNotFound(t *testing.T) {
+	// start 3 node cluster
+	t.Log("starting 3 node cluster")
+	cluster := newTestCluster(t, 3)
+	defer cluster.Shutdown()
+
+	// get the file from the HTTP API of each node
+	for _, node := range cluster.Nodes {
+		t.Logf("getting file from %s", node.Name)
+		res, err := http.Get(node.URL + "/bzz:/1023e8bae0f70be7d7b5f74343088ba408a218254391490c85ae16278e230340")
+		assertNil(t, err)
+	}
+}
+
 func assertNil(t *testing.T, err error) {
 	if err != nil {
 		t.Fatal(err)
